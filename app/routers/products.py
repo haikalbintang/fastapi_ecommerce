@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, status, Depends
 from sqlmodel import select
 
 from db import SessionDep
 from models import ProductBase, Product, User
-from ..dependencies import get_token_header
+from app.auth import get_current_active_user
 
 
 router = APIRouter(
     prefix="/products",
     tags=["products"],
-    dependencies=[Depends(get_token_header)],
+    # dependencies=[Depends(get_token_header)],
     responses={404: {"description": "Not found"}},
 )
 
@@ -17,14 +17,14 @@ router = APIRouter(
 fake_products_db = {"plumbus": {"name": "Plumbus"}, "gun": {"name": "Portal Gun"}}
 
 
-@router.post("/", response_model=Product, status_code=201)
-async def create_product_0(
-        merchant_id: int,
+@router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
+async def create_product(
         product: ProductBase,
-        session: SessionDep
+        session: SessionDep,
+        current_user: User = Depends(get_current_active_user),
 ):
-    new_product = Product(**product.model_dump())
-    new_product.merchant_id = merchant_id
+    new_product = Product(**product.model_dump(exclude={"merchant_id"}))
+    new_product.merchant_id = current_user.id
     session.add(new_product)
     session.commit()
     session.refresh(new_product)
@@ -66,14 +66,20 @@ async def read_product(
 @router.delete("/{product_id}")
 async def delete_product(
         product_id: int,
-        session: SessionDep
+        session: SessionDep,
+        current_user: User = Depends(get_current_active_user),
 ):
     product = session.get(Product, product_id)
+
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    if current_user.role != "admin" and product.merchant_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this product")
+
     session.delete(product)
     session.commit()
-    return {"ok": True}
+    return {"message": "Product deleted successfully"}
 
 
 @router.put(

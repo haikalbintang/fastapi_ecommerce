@@ -27,7 +27,7 @@ class UserBase(SQLModel):
 
 class User(UserBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    password: str
+    hashed_password: str
 
     # products: List["Product"] = Relationship(back_populates="merchant")
 
@@ -37,11 +37,11 @@ class UserPublic(UserBase):
 
 
 class UserCreate(UserBase):
-    password: str
+    hashed_password: str
 
 
 class UserUpdate(UserBase):
-    password: str | None
+    hashed_password: str | None
 
 
 # class UserProducts(UserBase):

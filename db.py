@@ -4,42 +4,71 @@ from fastapi import Depends
 from sqlmodel import SQLModel, create_engine, Session, select
 
 from models import User
+from app.security import get_password_hash
 
-sqlite_file_name = "database1.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
 
-connect_args = {"check_same_thread": False}
-engine = create_engine(url=sqlite_url, echo=True, connect_args=connect_args)
+# === Database Config ===
+SQLITE_FILE_NAME = "database1.db"
+SQLITE_URL = f"sqlite:///{SQLITE_FILE_NAME}"
+CONNECT_ARGS = {"check_same_thread": False}
 
-def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+engine = create_engine(url=SQLITE_URL, echo=True, connect_args=CONNECT_ARGS)
 
+
+# === Session Dependency ===
 def get_session():
     with Session(engine) as session:
         yield session
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
+
+# === DB Init & Seeding ===
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)
+
+
 def user_seed():
+    """Seed initial admin user if not exists."""
     with Session(engine) as session:
-        statement = select(User).where(User.username == "kopiberry")
-        existing_user = session.exec(statement=statement).first()
-        if existing_user:
+        user = session.exec(select(User).where(User.username == "kopiberry")).first()
+        if user:
             print("User already exists, skipping seeding...")
             return
 
-        kopi_berry = User(username="kopiberry",
-                          email="kopiberry@mail.com",
-                          password="1234",
-                          full_name="Kopi Berry",
-                          role="admin")
-
-        session.add(kopi_berry)
+        hashed_password = get_password_hash("1234")
+        session.add(User(
+            username="kopiberry",
+            email="kopiberry@mail.com",
+            hashed_password=hashed_password,
+            full_name="Kopi Berry",
+            role="admin"
+        ))
 
         session.commit()
+        print("Seeded admin user: kopiberry")
 
-        session.close()
 
+async def get_user_by_username(username: str, session: SessionDep) -> User | None:
+    """Retrieve user by username."""
+    return session.exec(select(User).where(User.username == username)).first()
+
+
+async def get_user_by_email(email: str, session: SessionDep) -> User | None:
+    """Retrieve user by email."""
+    return session.exec(select(User).where(User.email == email)).first()
+
+
+async def create_user(user_data: User, session: SessionDep) -> User:
+    """Create a new user from user_data."""
+    new_user = User(**user_data.model_dump())
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+    return new_user
+
+
+# === Entrypoint ===
 def main():
     create_db_and_tables()
     user_seed()

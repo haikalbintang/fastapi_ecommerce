@@ -4,8 +4,8 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlmodel import select
 
 from db import SessionDep
-from models import User, UserPublic, UserCreate, UserUpdate, Product
-from ..dependencies import get_token_header
+from models import User, UserPublic, UserUpdate, Product
+from app.auth import get_current_active_user
 
 
 router = APIRouter(
@@ -16,23 +16,6 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=UserPublic, status_code=201)
-def create_user(user: UserCreate, session: SessionDep):
-    existing_username = session.exec(select(User).where(User.username == user.username)).first()
-    if existing_username:
-        raise HTTPException(status_code=409, detail="Username already exist")
-    existing_email = session.exec(select(User).where(User.email == user.email)).first()
-    if existing_email:
-        raise HTTPException(status_code=409, detail="Email already exist")
-    try:
-        new_user = User(**user.model_dump())
-        session.add(new_user)
-        session.commit()
-        session.refresh(new_user)
-        return new_user
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/", response_model=list[UserPublic])
 def read_users(
         session: SessionDep,
@@ -41,6 +24,14 @@ def read_users(
 ):
     users = session.exec(select(User).offset(offset).limit(limit)).all()
     return users
+
+
+@router.get("/me")
+async def read_me(
+        current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    return current_user
+
 
 @router.get("/{user_id}", response_model=UserPublic)
 def read_user(
@@ -52,32 +43,78 @@ def read_user(
         raise HTTPException(status_code=404, detail="User not found")
     return {"user": user}
 
+
 @router.delete("/{user_id}")
-def delete_user(
+def disable_user(
         user_id: int,
-        session: SessionDep
+        session: SessionDep,
+        current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     user = session.get(User, user_id)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    session.delete(user)
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this user")
+
+    if user.disabled:
+        return {"message": "User is already disabled"}
+
+    if user.role == "admin":
+        return {"message": "Cannot disable an admin user"}
+
+    user.disabled = True
+    session.add(user)
     session.commit()
-    return {"ok": True}
+
+    return {"message": f"User '{user.username}' has been disabled"}
+
 
 @router.patch("/{user_id}", response_model=UserPublic)
 def update_user(
         user_id: int,
         user: UserUpdate,
-        session: SessionDep
+        session: SessionDep,
+        current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     existing_user = session.get(User, user_id)
+
     if not existing_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if existing_user.id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this user")
+
     existing_user.sqlmodel_update(user.model_dump(exclude_unset=True))
     session.add(existing_user)
     session.commit()
     session.refresh(existing_user)
     return {"updated_user": existing_user}
+
+
+@router.patch("/{user_id}/enable")
+def enable_user(
+        user_id: int,
+        session: SessionDep,
+        current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    user = session.get(User, user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to enable this user")
+
+    if not user.disabled:
+        return {"message": "User is already active"}
+
+    user.disabled = False
+    session.add(user)
+    session.commit()
+
+    return {"message": f"User '{user.username}' has been enabled"}
 
 
 @router.get("/{user_id}/products")
