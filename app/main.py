@@ -15,6 +15,7 @@ from .internal import admin_router
 from .routers import users_router, products_router
 from models import User
 
+import os
 from dotenv import load_dotenv
 
 
