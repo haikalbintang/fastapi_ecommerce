@@ -1,4 +1,5 @@
 from typing import Annotated
+import os
 
 from fastapi import Depends
 from sqlmodel import SQLModel, create_engine, Session, select
@@ -8,11 +9,12 @@ from app.security import get_password_hash
 
 
 # === Database Config ===
-SQLITE_FILE_NAME = "database1.db"
-SQLITE_URL = f"sqlite:///{SQLITE_FILE_NAME}"
-CONNECT_ARGS = {"check_same_thread": False}
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/fastapidb")
 
-engine = create_engine(url=SQLITE_URL, echo=True, connect_args=CONNECT_ARGS)
+engine = create_engine(
+    url=DATABASE_URL,
+    echo=True,
+)
 
 
 # === Session Dependency ===
