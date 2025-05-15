@@ -41,15 +41,13 @@ async def read_products(
     return products
 
 
-@router.get("/test")
-def select_product_test_6(session: SessionDep):
-    products = []
-    users = []
-    results = session.exec(select(Product, User).join(User, isouter=True))
-    for product, user in results:
-        products.append(product)
-        users.append(user)
-    return {"product": products, "user": users}
+@router.get("/my-products")
+async def read_my_products(
+        session: SessionDep,
+        current_user: User = Depends(get_current_active_user),
+):
+    my_products = session.exec(select(Product).where(Product.merchant_id == current_user.id)).all()
+    return {"my_products": my_products}
 
 
 @router.get("/{product_id}")
@@ -90,10 +88,16 @@ async def update_product(
         product_id: int,
         product: ProductBase,
         session: SessionDep,
+        current_user: User = Depends(get_current_active_user),
 ):
     existing_product = session.get(Product, product_id)
+
     if not existing_product:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    if current_user.id != existing_product.merchant_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this product")
+
     existing_product.sqlmodel_update(product.model_dump(exclude_unset=True))
     session.add(existing_product)
     session.commit()

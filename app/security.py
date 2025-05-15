@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from passlib.context import CryptContext
+from fastapi import HTTPException, status
 
 import os
 from dotenv import load_dotenv
@@ -34,3 +35,22 @@ def create_access_token(
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_access_token(token: str):
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    username: str = payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token payload invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
+
+    # except Exception:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Token is invalid",
+    #         headers={"WWW-Authenticate": "Bearer"},
+    #     )
